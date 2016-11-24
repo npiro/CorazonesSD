@@ -1,3 +1,6 @@
+## numpy binaries
+*.npy
+
 ## Compiled source
 *.pyc
 *.com
