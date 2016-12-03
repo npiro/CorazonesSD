@@ -7,10 +7,82 @@ import numpy as np
 from joblib import Parallel, delayed
 import time
 import sys
+from sklearn.metrics.pairwise import cosine_similarity
+from scipy import sparse
 
 
 processors = 4
 max_chunksize=10000
+csv_name = 'train_ver2'
+##train_csv = os.path.join(dir,'train_ver2.csv')
+
+
+def main():
+    print 'n_lines = ', load_dataset_line_number()
+    client_ids = get_client_ids()
+    print 'n_clients = ', client_ids.shape
+
+    client_index_array = np.load('../' + csv_name + '__client_indices.npy')
+    dataset_line_number = load_dataset_line_number()
+    print 'dataset_line_number =',dataset_line_number
+    dataset_line_number = load_dataset_line_number()
+    
+    train_chunks = float(dataset_line_number)/max_chunksize
+    
+    product_ids = get_product_ids()
+    #create_utility_matrix(product_ids)
+    utility_matrix = load_utility_matrix()
+           
+    mean_user_rating = np.nanmean(utility_matrix,axis=0)
+#    print product_ids
+#    print mean_user_rating
+    
+
+    
+    # Replace NaNs by zeros
+    utility_matrix[np.isnan(utility_matrix)] = 0
+    
+#    from sklearn.metrics.pairwise import pairwise_distances
+#    user_similarity = pairwise_distances(utility_matrix_sparse, metric='cosine',dense_output=False)
+#    print user_similarity
+
+    from sklearn.metrics.pairwise import cosine_similarity
+    from scipy import sparse
+    utility_matrix_sparse = sparse.csr_matrix(utility_matrix[:,:])
+    
+    #user_similarity = cosine_similarity(utility_matrix_sparse,dense_output=False)
+    #np.save(csv_name + '__user_similarity_30000',user_similarity)
+    #print user_similarity
+    
+    #print utility_matrix.shape
+
+    
+    item_prediction = predict_memory_based(utility_matrix, type='item')
+    
+
+def predict_memory_based(ratings, type='item'):
+    # Replace NaNs by zeros
+    ratings[np.isnan(ratings)] = 0
+    
+    ratings_sparse = sparse.csr_matrix(ratings[:,:])
+
+#    from sklearn.metrics.pairwise import pairwise_distances
+#    user_similarity = pairwise_distances(utility_matrix_sparse, metric='cosine',dense_output=False)
+
+    if type == 'user':
+        #mean_user_rating = ratings.mean(axis=1)
+        ##You use np.newaxis so that mean_user_rating has same format as ratings
+        #ratings_diff = (ratings - mean_user_rating[:, np.newaxis]) 
+        #pred = mean_user_rating[:, np.newaxis] + similarity.dot(ratings_diff) / np.array([np.abs(similarity).sum(axis=1)]).T
+        pass
+    elif type == 'item':
+        similarity = cosine_similarity(ratings_sparse.T,dense_output=False)
+        pred = ratings_sparse.dot(similarity) / np.array([np.abs(similarity).sum(axis=1)])[0,:,0]     
+    return pred
+
+#pairwise_distances(utility_matrix_sparse.T, metric='cosine',dense_output=False)
+#    print item_similarity
+
 
 def get_train_reader():
     return pd.read_csv(os.path.join('..',csv_name+'.csv'), chunksize=max_chunksize, encoding = 'latin1')
@@ -32,27 +104,19 @@ def load_dataset_line_number():
     return np.load(csv_name + '__line_number.npy')
 
 
+def get_client_ids():
+    try:
+        return np.load('client_ids.npy')
+    except ValueError:
+        return create_client_ids()
+        
+def create_client_ids():
+    client_ids = np.array([],dtype='int')
+    for i, chunk in enumerate(train_reader):
+        client_ids = np.union1d(client_ids,chunk.ncodpers.unique())
+    np.save('client_ids',client_ids)
+    return client_ids
 
-
-##train_reader = pd.read_csv(train_csv, chunksize=1000)
-##train_reader = pd.read_csv(train_csv, iterator=True, chunksize=1000)
-##
-#def get_client_ids():
-#    client_ids = np.array([],dtype='int')
-#    for i, chunk in enumerate(train_reader):
-#        client_ids = np.union1d(client_ids,chunk.ncodpers.unique())
-#    return client_ids
-#
-#def create_client_ids_array():
-#    client_ids = get_client_ids()
-#    #client_ids.shape
-#    np.save('client_ids',client_ids)
-#    
-##create_client_ids_array()
-#
-#
-## In[6]:
-#
 #class train_chunker(object):
 #    """
 #    """
@@ -85,7 +149,8 @@ def create_dataset_client_index_array():
     for i, chunk in enumerate(train_reader):
         if i%100==0:
             proc_time = time.clock() - t0
-            print('chunk ' + str(i) + ' from ' + str(train_chunks) + '. (' + str(proc_time) + ' secs)')
+            print('chunk ' + str(i) + ' from ' + str(train_chunks) + '. ('\
+             + str(proc_time) + ' secs)')
 
         chunk_size = len(chunk)
         chunk_ncodpers = chunk.ncodpers
@@ -97,7 +162,8 @@ def create_dataset_client_index_array():
         for i, indice in enumerate(stdout):
             chunk_indices[i]= indice
 
-        train_data_client_indices = np.concatenate((train_data_client_indices, chunk_indices))
+        train_data_client_indices = \
+        np.concatenate((train_data_client_indices, chunk_indices))
         #    train_data_client_indices[i*chunksize:(i+1)*chunksize] = chunk_indices
 
     np.save(csv_name + '__client_indices',train_data_client_indices)
@@ -161,92 +227,7 @@ def get_client_matrix():
     #        raw_input()
             #break
     return client_matrix
-           
-
-#
-#for i, chunk in enumerate(train_reader):
-#    pass
-#print i
-##    print(chunk.ncodpers.unique().shape)
-#
-##data=train_df.get_chunk()
-##data.ncodpers.unique()
-##for chunk_df in train_df:
-##    chunk_data = chunk_df.get_chunk()
-##    print chunk_data.shape
-##read
-##data.ncodpers.unique()
-#
-#
-## In[ ]:
-#
-## Import description table (describing the meaning of each column)
-#description = read_csv(os.path.join(dir,'column_description.csv'),encoding = 'latin1')
-#description
-#
-#
-## In[ ]:
-#
-## Select product column names and build indeces range
-#column_names = data.columns.values
-#product_names = [(i, s) for i, s in enumerate(column_names) if 'ind_' in s and '_ult1' in s]
-#product_indeces = [e[0] for e in product_names]
-#mInd = min(product_indeces)
-#MInd = max(product_indeces)
-#product_indeces_range = range(mInd,MInd)
-#
-#
-## In[ ]:
-#
-#product_names
-#
-#
-## In[ ]:
-#
-## Build a dataframe only with products
-#product_df = data.iloc[:,product_indeces_range]
-#
-#
-## In[ ]:
-#
-## Build a Series with number of products and use description as indeces
-#desclist=description.iloc[product_indeces_range,1].tolist()
-#num_products = Series(product_df.sum().tolist(),index=desclist)
-#num_products
 
             
 if __name__ == '__main__':
-
-    csv_name = 'train_ver2'
-    ##train_csv = os.path.join(dir,'train_ver2.csv')
-    client_ids = np.load('../client_ids.npy')
-    client_number = client_ids.shape[0]
-
-    client_index_array = np.load('../' + csv_name + '__client_indices.npy')
-    dataset_line_number = load_dataset_line_number()
-    print 'dataset_line_number =',dataset_line_number
-    dataset_line_number = load_dataset_line_number()
-    
-    train_chunks = float(dataset_line_number)/max_chunksize
-    print 'train_chunks = ',train_chunks
-    
-    product_ids = get_product_ids()
-    #create_utility_matrix(product_ids)
-#    utility_matrix = load_utility_matrix()
-    utility_matrix = np.load(csv_name + '__utility_matrix_wrong.npy')
-           
-    mean_user_rating = np.nanmean(utility_matrix,axis=0)
-    print product_ids
-    print mean_user_rating
-    print np.nanmean(utility_matrix,axis=0)
-
-    print 'amount of NaNs = ', np.isnan(utility_matrix)
-    print 'amount of NaNs per product = ', np.sum(np.isnan(utility_matrix),axis=0)
-    print 'amount of NaNs per user    = ', np.sum(np.isnan(utility_matrix),axis=1)
-
-    print 'have Nans? ', np.isnan(np.sum(utility_matrix))
-
-    from sklearn.metrics.pairwise import pairwise_distances
-    user_similarity = pairwise_distances(utility_matrix, metric='cosine')
-    item_similarity = pairwise_distances(utility_matrix.T, metric='cosine')
-
+    main()
