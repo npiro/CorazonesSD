@@ -1,6 +1,4 @@
 # coding: utf-8
-#
-## Import necessary stuff
 import pandas as pd
 import os.path
 import numpy as np
@@ -9,7 +7,6 @@ import time
 import sys
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy import sparse
-
 
 processors = 4
 max_chunksize=10000
@@ -23,65 +20,36 @@ def main():
     print 'n_clients = ', client_ids.shape
 
     client_index_array = np.load('../' + csv_name + '__client_indices.npy')
-    dataset_line_number = load_dataset_line_number()
-    print 'dataset_line_number =',dataset_line_number
-    dataset_line_number = load_dataset_line_number()
-    
-    train_chunks = float(dataset_line_number)/max_chunksize
-    
-    product_ids = get_product_ids()
-    #create_utility_matrix(product_ids)
-    utility_matrix = load_utility_matrix()
-           
-    mean_user_rating = np.nanmean(utility_matrix,axis=0)
-#    print product_ids
-#    print mean_user_rating
-    
-
-    
-    # Replace NaNs by zeros
-    utility_matrix[np.isnan(utility_matrix)] = 0
-    
-#    from sklearn.metrics.pairwise import pairwise_distances
-#    user_similarity = pairwise_distances(utility_matrix_sparse, metric='cosine',dense_output=False)
-#    print user_similarity
-
-    from sklearn.metrics.pairwise import cosine_similarity
-    from scipy import sparse
-    utility_matrix_sparse = sparse.csr_matrix(utility_matrix[:,:])
-    
-    #user_similarity = cosine_similarity(utility_matrix_sparse,dense_output=False)
-    #np.save(csv_name + '__user_similarity_30000',user_similarity)
-    #print user_similarity
-    
-    #print utility_matrix.shape
-
-    
-    item_prediction = predict_memory_based(utility_matrix, type='item')
     
 
 def predict_memory_based(ratings, type='item'):
+
     # Replace NaNs by zeros
     ratings[np.isnan(ratings)] = 0
     
-    ratings_sparse = sparse.csr_matrix(ratings[:,:])
-
-#    from sklearn.metrics.pairwise import pairwise_distances
-#    user_similarity = pairwise_distances(utility_matrix_sparse, metric='cosine',dense_output=False)
-
     if type == 'user':
-        #mean_user_rating = ratings.mean(axis=1)
-        ##You use np.newaxis so that mean_user_rating has same format as ratings
-        #ratings_diff = (ratings - mean_user_rating[:, np.newaxis]) 
-        #pred = mean_user_rating[:, np.newaxis] + similarity.dot(ratings_diff) / np.array([np.abs(similarity).sum(axis=1)]).T
-        pass
-    elif type == 'item':
-        similarity = cosine_similarity(ratings_sparse.T,dense_output=False)
-        pred = ratings_sparse.dot(similarity) / np.array([np.abs(similarity).sum(axis=1)])[0,:,0]     
-    return pred
+        # user cosine similarity calculation requires a lot of memory
+        # could not be computed in my laptop 
+        ratings_sparse = sparse.csr_matrix(ratings[:,:])
+        similarity = cosine_similarity(ratings_sparse,dense_output=False)
+        mean_user_rating = ratings.mean(axis=1)
+        #You use np.newaxis so that mean_user_rating has same format as ratings
+        ratings_diff = (ratings - mean_user_rating[:, np.newaxis]) 
+        pred = mean_user_rating[:, np.newaxis] + similarity.dot(ratings_diff) / np.array([np.abs(similarity).sum(axis=1)]).T
 
-#pairwise_distances(utility_matrix_sparse.T, metric='cosine',dense_output=False)
-#    print item_similarity
+    elif type == 'item':
+        ratings_sparse = sparse.csr_matrix(ratings[:,:])
+        similarity = cosine_similarity(ratings_sparse.T,dense_output=False)
+        # or
+        #from sklearn.metrics.pairwise import pairwise_distances
+        #similarity = pairwise_distances(ratings_matrix.T, metric='cosine')
+
+        # sklearn.metrics.pairwise.pairwise_distances apparently does not 
+        # support sparse matrices
+
+        pred = ratings_sparse.dot(similarity) / np.array([np.abs(similarity).sum(axis=1)])[0,:,0]
+        
+    return pred
 
 
 def get_train_reader():
