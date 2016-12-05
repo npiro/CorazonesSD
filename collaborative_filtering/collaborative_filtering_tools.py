@@ -7,20 +7,141 @@ import time
 import sys
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy import sparse
+import shlex
+from subprocess import Popen, PIPE
 
 processors = 4
 max_chunksize=10000
-csv_name = 'train_ver2'
-##train_csv = os.path.join(dir,'train_ver2.csv')
+data_dir = '..'
 
 
 def main():
-    print 'n_lines = ', load_dataset_line_number()
-    client_ids = get_client_ids()
-    print 'n_clients = ', client_ids.shape
+    pass
 
-    client_index_array = np.load('../' + csv_name + '__client_indices.npy')
+
+def get_data_dict(csv_name):
+    data = dict()
+    data['frame']      = get_data_frame(csv_name)
+    data['n_lines']    = get_n_lines(csv_name)
+    data['client_ids'] = get_client_ids(csv_name)
+    data['n_clients']  = data['client_ids'].shape[0]
+    data['n_chunks']   = float(data['n_lines'])/max_chunksize
+    data['client_indices'] = get_client_indices(csv_name)
+    return data
     
+
+def get_data_frame(csv_name):
+    return pd.read_csv(os.path.join(data_dir,csv_name+'.csv')
+    , chunksize=max_chunksize, encoding = 'latin1')
+    
+    
+def get_n_lines(csv_name):
+    n_lines_file = os.path.join(data_dir,csv_name+'_n_lines')
+    try:
+        return int(np.load(n_lines_file+'.npy'))
+    except IOError:
+        data_file = os.path.join(data_dir,csv_name+'.csv')
+        cmd = "wc -l " + data_file
+        process = Popen(shlex.split(cmd), stdout=PIPE)
+        (output, err) = process.communicate()
+        #exit_code = process.wait
+        data_n_lines = int(output.split()[0])
+        np.save(n_lines_file,data_n_lines)
+        return data_n_lines
+        
+
+def get_product_ids(csv_name):
+    data_frame = get_data_frame(csv_name)
+    for i, chunk in enumerate(data_frame):
+        column_ids = chunk.keys()
+        product_ids = [s for s in column_ids if "ind" in s and "ult1" in s ]
+        break
+    return product_ids
+
+
+def get_client_ids(csv_name):
+    client_ids_file = os.path.join(data_dir,csv_name+'_client_ids.npy')
+    try:
+        return np.load(client_ids_file)
+    except IOError:
+        data_frame = get_data_frame(csv_name)
+        client_ids = np.array([],dtype='int')
+        for i, chunk in enumerate(data_frame):
+            client_ids = np.union1d(client_ids,chunk.ncodpers.unique())
+        np.save(client_ids_file,client_ids)
+        return client_ids
+        
+
+client_ids = get_client_ids('train_ver2')
+def find_client_index(ncodpers):
+    return np.argwhere(client_ids == ncodpers)
+
+
+def get_client_indices(csv_name):
+    client_indices_file = os.path.join(data_dir,csv_name+'_client_indices.npy')
+    try:
+        return np.load(client_indices_file)
+    except IOError:
+
+        data_client_indices = np.array([],dtype='int')
+        t0 = time.clock()
+    
+        data  = get_data_dict(csv_name)
+    
+        for i, chunk in enumerate(data['frame']):
+            if i % int(data['n_chunks']/10) == 0:
+                proc_time = time.clock() - t0
+                print('chunk ' + str(i) + ' from ' + str(data['n_chunks'])\
+                + '. (' + str(proc_time) + ' secs)')
+    
+            chunk_size = len(chunk)
+            chunk_ncodpers = chunk.ncodpers
+            #print chunk_ncodpers[0]
+            stdout = Parallel(n_jobs=processors)\
+            (delayed(find_client_index)(ncodpers) for ncodpers in chunk_ncodpers)
+    
+            chunk_indices = np.full((chunk_size),np.NaN)
+            for i, indice in enumerate(stdout):
+                chunk_indices[i]= indice
+    
+            data_client_indices = \
+            np.concatenate((data_client_indices, chunk_indices))
+            #    train_data_client_indices[i*chunksize:(i+1)*chunksize] = chunk_indices
+    
+        np.save(client_indices_file,data_client_indices)
+        return data_client_indices
+
+
+def get_utility_matrix(csv_name,product_ids,client_indices):
+    utility_matrix_file = os.path.join(data_dir,csv_name+'_utility_matrix.npy')
+    try:
+        return np.load(utility_matrix_file)
+    except IOError:
+
+        data  = get_data_dict(csv_name)
+        utility_matrix = np.zeros((client_ids.shape[0],len(product_ids)))
+        
+        t0 = time.clock()
+        j = 0
+        for i, chunk in enumerate(data['frame']):
+            if i%1==0:
+                proc_time = time.clock() - t0
+                print('chunk ' + str(i) + ' from ' + str(data['n_chunks']) \
+                + '. (' + str(proc_time) + ' secs)')
+    
+            chunk_len = len(chunk)
+            chunk_client_indices = client_indices[j:j+chunk_len]
+            j+=chunk_len
+            
+            for il in range(chunk_len):
+                for ip, product_id in enumerate(product_ids):
+                    utility_matrix[chunk_client_indices[il],ip] \
+                    += getattr(chunk,product_id)[il]
+        
+        np.save(utility_matrix_file,utility_matrix)
+        return utility_matrix
+
+
 
 def predict_memory_based(ratings, type='item'):
 
@@ -52,38 +173,28 @@ def predict_memory_based(ratings, type='item'):
     return pred
 
 
-def get_train_reader():
-    return pd.read_csv(os.path.join('..',csv_name+'.csv'), chunksize=max_chunksize, encoding = 'latin1')
+#    print sys._getframe().f_code.co_name
+
+#def get_train_reader():
+#    return pd.read_csv(os.path.join('..',csv_name+'.csv'), chunksize=max_chunksize, encoding = 'latin1')
 
 
-def create_dataset_line_number():
-    import shlex
-    from subprocess import Popen, PIPE
-    cmd = "wc -l " + '../'+csv_name + '.csv'
-    process = Popen(shlex.split(cmd), stdout=PIPE)
-    (output, err) = process.communicate()
-    exit_code = process.wait
-    train_lines = int(output.split()[0])
-    np.save(csv_name + '__line_number',train_lines)
-#    return train_lines
+#def create_dataset_line_number():
+#    import shlex
+#    from subprocess import Popen, PIPE
+#    cmd = "wc -l " + '../'+csv_name + '.csv'
+#    process = Popen(shlex.split(cmd), stdout=PIPE)
+#    (output, err) = process.communicate()
+#    exit_code = process.wait
+#    train_lines = int(output.split()[0])
+#    np.save(csv_name + '__line_number',train_lines)
+##    return train_lines
+#
+#
+#def load_dataset_line_number():
+#    return np.load(csv_name + '__line_number.npy')
+#
 
-
-def load_dataset_line_number():
-    return np.load(csv_name + '__line_number.npy')
-
-
-def get_client_ids():
-    try:
-        return np.load('client_ids.npy')
-    except ValueError:
-        return create_client_ids()
-        
-def create_client_ids():
-    client_ids = np.array([],dtype='int')
-    for i, chunk in enumerate(train_reader):
-        client_ids = np.union1d(client_ids,chunk.ncodpers.unique())
-    np.save('client_ids',client_ids)
-    return client_ids
 
 #class train_chunker(object):
 #    """
@@ -99,8 +210,6 @@ def create_client_ids():
 #        self.reader = pd.read_csv(self.csv_path, chunksize=self.chunksize)
 
 
-def find_client_index(ncodpers):
-    return np.argwhere(client_ids == ncodpers)
 
 
 def create_dataset_client_index_array():
@@ -137,44 +246,8 @@ def create_dataset_client_index_array():
     np.save(csv_name + '__client_indices',train_data_client_indices)
 
 
-def get_product_ids():
-    train_reader = get_train_reader()
-    for i, chunk in enumerate(train_reader):
-        column_ids = chunk.keys()
-    #            print vars(this_chunk).iteritems()
-        product_ids = [s for s in column_ids if "ult1" in s]
-        break
-    return product_ids
 
 
-def create_utility_matrix(product_ids):
-    print sys._getframe().f_code.co_name
-
-    train_reader = get_train_reader()
-
-#    utility_matrix = np.zeros((client_number,len(product_ids)),dtype='int')
-    utility_matrix = np.zeros((client_number,len(product_ids)))
-    
-    t0 = time.clock()
-    j = 0
-    for i, chunk in enumerate(train_reader):
-        if i%1==0:
-            proc_time = time.clock() - t0
-            print('chunk ' + str(i) + ' from ' + str(train_chunks) + '. (' + str(proc_time) + ' secs)')
-
-        chunk_len = len(chunk)
-        chunk_client_indices = client_index_array[j:j+chunk_len]
-        j+=chunk_len
-        
-        for il in range(chunk_len):
-            for ip, product_id in enumerate(product_ids):
-                utility_matrix[chunk_client_indices[il],ip] += getattr(chunk,product_id)[il]
-    
-    np.save(csv_name + '__utility_matrix',utility_matrix)
-    
-
-def load_utility_matrix():
-    return np.load(csv_name + '__utility_matrix.npy')
  
 
 def get_client_matrix():
