@@ -27,7 +27,7 @@ def get_data_dict(csv_name):
     data['client_ids'] = get_client_ids(csv_name)
     data['n_clients']  = data['client_ids'].shape[0]
     data['n_chunks']   = float(data['n_lines'])/max_chunksize
-    data['client_indices'] = get_client_indices(csv_name)
+    #data['client_indices'] = get_client_indices(csv_name)
     return data
     
 
@@ -167,8 +167,9 @@ def get_utility_matrix(csv_name):
     except IOError:
         print 'creating '+ utility_matrix_file
 
-        data  = get_data_dict(csv_name)
-        product_ids = get_product_ids(csv_name)
+        data           = get_data_dict(csv_name)
+        product_ids    = get_product_ids(csv_name)
+        client_indices = get_client_indices(csv_name)
         utility_matrix  = np.zeros((data['client_ids'].shape[0],len(product_ids)))
         client_n_months = np.zeros((data['client_ids'].shape[0],1))
         
@@ -178,7 +179,7 @@ def get_utility_matrix(csv_name):
             progress_message(i,t0,data['n_chunks'])
     
             chunk_len = len(chunk)
-            chunk_client_indices = data['client_indices'][j:j+chunk_len]
+            chunk_client_indices = client_indices[j:j+chunk_len]
             j+=chunk_len
             
             for il in range(chunk_len):
