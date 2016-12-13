@@ -158,7 +158,7 @@ def get_client_indices(csv_name):
 
 
 def get_utility_matrix(csv_name):
-    utility_matrix_file = join(data_dir,csv_name+'_utility_matrix.npy')
+    utility_matrix_file  = join(data_dir,csv_name+'_utility_matrix.npy')
     client_n_months_file = join(data_dir,csv_name+'_client_n_months.npy')
     try:
         utility_matrix = np.load(utility_matrix_file)
